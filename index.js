@@ -11,6 +11,7 @@ import makeWASocket, {
 import { Boom } from '@hapi/boom';
 import pino from 'pino';
 import axios from 'axios';
+import qrcode from 'qrcode-terminal'; // <-- Imported the manual QR generator
 
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 const TELEGRAM_CHANNEL_ID = process.env.TELEGRAM_CHANNEL_ID;
@@ -24,7 +25,7 @@ async function connectToWhatsApp() {
 
     const sock = makeWASocket({
         auth: state,
-        printQRInTerminal: true,
+        // Removed the deprecated printQRInTerminal
         logger: pino({ level: 'silent' }), 
         browser: ["Ubuntu", "Chrome", "20.0.04"],
     });
@@ -36,6 +37,8 @@ async function connectToWhatsApp() {
         
         if (qr) {
             console.log('\n--- SCAN THIS QR CODE WITH WHATSAPP ---');
+            // Generate the QR code manually in the terminal
+            qrcode.generate(qr, { small: true });
         }
         
         if (connection === 'close') {
