@@ -8,14 +8,15 @@ const TELEGRAM_CHANNEL_ID = process.env.TELEGRAM_CHANNEL_ID;
 const WHATSAPP_CHANNEL_JID = process.env.WHATSAPP_CHANNEL_JID;
 
 async function connectToWhatsApp() {
-    // This saves your session so you don't have to scan the QR code every time you deploy
-const { state, saveCreds } = await useMultiFileAuthState('./data/auth_info_baileys');
+    console.log("Starting WhatsApp Bridge...");
+    const { state, saveCreds } = await useMultiFileAuthState('./data/auth_info_baileys');
 
     const sock = makeWASocket({
         auth: state,
         printQRInTerminal: true,
-        logger: pino({ level: 'silent' }), // Suppresses the massive Baileys debug logs
-        browser: ["Channel-Bridge", "Chrome", "1.0.0"],
+        logger: pino({ level: 'silent' }), 
+        // Spoofing a standard Ubuntu Chrome browser to prevent instant WebSocket rejections
+        browser: ["Ubuntu", "Chrome", "20.0.04"],
     });
 
     sock.ev.on('creds.update', saveCreds);
@@ -28,9 +29,21 @@ const { state, saveCreds } = await useMultiFileAuthState('./data/auth_info_baile
         }
         
         if (connection === 'close') {
-            const shouldReconnect = (lastDisconnect.error instanceof Boom)?.output?.statusCode !== DisconnectReason.loggedOut;
-            console.log('Connection closed. Reconnecting:', shouldReconnect);
-            if (shouldReconnect) connectToWhatsApp();
+            const error = lastDisconnect?.error;
+            const statusCode = (error instanceof Boom) ? error.output?.statusCode : 500;
+            const shouldReconnect = statusCode !== DisconnectReason.loggedOut;
+            
+            // PRINT THE EXACT ERROR CAUSING THE DISCONNECT
+            console.log('\n❌ Connection closed due to error:');
+            console.log(error?.message || error || "Unknown Error");
+            console.log(`Status Code: ${statusCode}`);
+            
+            if (shouldReconnect) {
+                console.log('⏳ Reconnecting in 3 seconds...');
+                setTimeout(connectToWhatsApp, 3000);
+            } else {
+                console.log('🚨 Logged out. You need to delete the ./data/auth_info_baileys folder and rescan.');
+            }
         } else if (connection === 'open') {
             console.log('✅ Connected to WhatsApp successfully!');
             console.log(`🎧 Listening strictly for Channel: ${WHATSAPP_CHANNEL_JID}`);
@@ -44,9 +57,7 @@ const { state, saveCreds } = await useMultiFileAuthState('./data/auth_info_baile
 
         const remoteJid = msg.key.remoteJid;
         
-        // Strict filter: Only process messages from your specific Channel
         if (remoteJid === WHATSAPP_CHANNEL_JID) {
-            // Ignore messages if they are somehow echoed back from ourselves
             if (msg.key.fromMe) return;
 
             console.log('\n--- NEW CHANNEL MESSAGE DETECTED ---');
@@ -54,7 +65,6 @@ const { state, saveCreds } = await useMultiFileAuthState('./data/auth_info_baile
             const messageType = Object.keys(msg.message)[0];
             let text = '';
 
-            // Extract text based on how the channel media is formatted
             if (messageType === 'conversation') {
                 text = msg.message.conversation;
             } else if (messageType === 'extendedTextMessage') {
