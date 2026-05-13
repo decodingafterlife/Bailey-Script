@@ -9,7 +9,7 @@ const WHATSAPP_CHANNEL_JID = process.env.WHATSAPP_CHANNEL_JID;
 
 async function connectToWhatsApp() {
     // This saves your session so you don't have to scan the QR code every time you deploy
-    const { state, saveCreds } = await useMultiFileAuthState('auth_info_baileys');
+const { state, saveCreds } = await useMultiFileAuthState('./data/auth_info_baileys');
 
     const sock = makeWASocket({
         auth: state,
