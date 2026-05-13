@@ -22,7 +22,7 @@ async function connectToWhatsApp() {
     // Auth info remains in the persistent volume
     const { state, saveCreds } = await useMultiFileAuthState('./data/auth_info_baileys');
 
-    const sock = makeWASocket.default({
+    const sock = makeWASocket({
         auth: state,
         printQRInTerminal: true,
         logger: pino({ level: 'silent' }), 
