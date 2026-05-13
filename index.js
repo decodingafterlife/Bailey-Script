@@ -1,5 +1,4 @@
 import nodeCrypto from 'node:crypto';
-// Polyfill for Web Crypto API in Node.js
 if (!globalThis.crypto) {
     globalThis.crypto = nodeCrypto.webcrypto;
 }
@@ -11,7 +10,7 @@ import makeWASocket, {
 import { Boom } from '@hapi/boom';
 import pino from 'pino';
 import axios from 'axios';
-import qrcode from 'qrcode-terminal'; // <-- Imported the manual QR generator
+import qrcode from 'qrcode-terminal';
 
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 const TELEGRAM_CHANNEL_ID = process.env.TELEGRAM_CHANNEL_ID;
@@ -20,14 +19,15 @@ const WHATSAPP_CHANNEL_JID = process.env.WHATSAPP_CHANNEL_JID;
 async function connectToWhatsApp() {
     console.log("🚀 Starting WhatsApp Bridge (ESM Mode)...");
     
-    // Auth info remains in the persistent volume
     const { state, saveCreds } = await useMultiFileAuthState('./data/auth_info_baileys');
 
     const sock = makeWASocket({
         auth: state,
-        // Removed the deprecated printQRInTerminal
         logger: pino({ level: 'silent' }), 
-        browser: ["Ubuntu", "Chrome", "20.0.04"],
+        // 1. Hardcoding a stable WA Web version to prevent 405/500 connection drops
+        version: [2, 3000, 1033893291], 
+        // 2. Spoofing MacOS to bypass the Linux server block
+        browser: ['Mac OS', 'Chrome', '121.0.6167.160'],
     });
 
     sock.ev.on('creds.update', saveCreds);
@@ -37,7 +37,6 @@ async function connectToWhatsApp() {
         
         if (qr) {
             console.log('\n--- SCAN THIS QR CODE WITH WHATSAPP ---');
-            // Generate the QR code manually in the terminal
             qrcode.generate(qr, { small: true });
         }
         
@@ -47,6 +46,7 @@ async function connectToWhatsApp() {
             const shouldReconnect = statusCode !== DisconnectReason.loggedOut;
             
             console.log('\n❌ Connection closed:', error?.message || "Unknown Error");
+            console.log(`Status Code: ${statusCode}`);
             
             if (shouldReconnect) {
                 console.log('⏳ Reconnecting in 3 seconds...');
@@ -70,7 +70,6 @@ async function connectToWhatsApp() {
 
             console.log('\n--- NEW CHANNEL MESSAGE DETECTED ---');
             
-            // Channel messages often live in newsletterContent or standard fields
             const messageType = Object.keys(msg.message)[0];
             let text = '';
 
