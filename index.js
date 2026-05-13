@@ -1,4 +1,8 @@
-const crypto = require('crypto');
+const nodeCrypto = require('crypto');
+if (!global.crypto) {
+    global.crypto = nodeCrypto.webcrypto;
+}
+
 const { default: makeWASocket, useMultiFileAuthState, DisconnectReason } = require('@whiskeysockets/baileys');
 const { Boom } = require('@hapi/boom');
 const pino = require('pino');
