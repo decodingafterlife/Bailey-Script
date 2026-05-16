@@ -5,8 +5,7 @@ if (!globalThis.crypto) {
 
 import makeWASocket, { 
     useMultiFileAuthState, 
-    DisconnectReason,
-    downloadMediaMessage 
+    DisconnectReason 
 } from '@whiskeysockets/baileys';
 import { Boom } from '@hapi/boom';
 import pino from 'pino';
@@ -52,7 +51,6 @@ async function connectToWhatsApp() {
             const shouldReconnect = statusCode !== DisconnectReason.loggedOut;
             
             console.log('\n❌ Connection closed:', error?.message || "Unknown Error");
-            console.log(`Status Code: ${statusCode}`);
             
             if (shouldReconnect) {
                 console.log('⏳ Reconnecting in 3 seconds...');
@@ -90,27 +88,33 @@ async function connectToWhatsApp() {
                     console.log(`Forwarding Text: ${text.substring(0, 30)}...`);
                     await sendTextToTelegram(text);
                     
-                } else if (messageType === 'imageMessage') {
-                    text = msg.message.imageMessage.caption || '';
-                    console.log(`Downloading Image with caption: ${text.substring(0, 30)}...`);
+                } else if (messageType === 'imageMessage' || messageType === 'videoMessage') {
+                    const media = msg.message[messageType];
+                    text = media.caption || '';
+                    const mediaType = messageType === 'imageMessage' ? 'image' : 'video';
                     
-                    const buffer = await downloadMediaMessage(msg, 'buffer', {}, { 
-                        logger: pino({ level: 'silent' }),
-                        reuploadRequest: sock.updateMediaMessage
+                    console.log(`Downloading ${mediaType} with caption: ${text.substring(0, 30)}...`);
+                    
+                    let mediaUrl = media.url;
+                    if (!mediaUrl && media.directPath) {
+                        mediaUrl = `https://mmg.whatsapp.net${media.directPath}`;
+                    }
+                    
+                    if (!mediaUrl) {
+                        console.log("❌ Cannot download: No URL or directPath provided by WhatsApp.");
+                        return;
+                    }
+
+                    const response = await axios.get(mediaUrl, { 
+                        responseType: 'arraybuffer',
+                        headers: {
+                            'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36'
+                        }
                     });
                     
-                    await sendMediaToTelegram(buffer, 'image', text);
+                    const buffer = Buffer.from(response.data);
+                    await sendMediaToTelegram(buffer, mediaType, text);
                     
-                } else if (messageType === 'videoMessage') {
-                    text = msg.message.videoMessage.caption || '';
-                    console.log(`Downloading Video with caption: ${text.substring(0, 30)}...`);
-                    
-                    const buffer = await downloadMediaMessage(msg, 'buffer', {}, { 
-                        logger: pino({ level: 'silent' }),
-                        reuploadRequest: sock.updateMediaMessage
-                    });
-                    
-                    await sendMediaToTelegram(buffer, 'video', text);
                 } else {
                     console.log(`Message received, but unsupported media type: ${messageType}`);
                 }
