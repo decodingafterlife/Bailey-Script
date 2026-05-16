@@ -5,12 +5,14 @@ if (!globalThis.crypto) {
 
 import makeWASocket, { 
     useMultiFileAuthState, 
-    DisconnectReason 
+    DisconnectReason,
+    downloadMediaMessage 
 } from '@whiskeysockets/baileys';
 import { Boom } from '@hapi/boom';
 import pino from 'pino';
 import axios from 'axios';
 import qrcode from 'qrcode-terminal';
+import FormData from 'form-data';
 
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 const TELEGRAM_CHANNEL_ID = process.env.TELEGRAM_CHANNEL_ID;
@@ -26,7 +28,6 @@ async function connectToWhatsApp() {
         logger: pino({ level: 'silent' }), 
         version: [2, 3000, 1033893291], 
         browser: ['Mac OS', 'Chrome', '121.0.6167.160'],
-        
         keepAliveIntervalMs: 25000,
         syncFullHistory: false,
         markOnlineOnConnect: false,
@@ -78,25 +79,49 @@ async function connectToWhatsApp() {
             const messageType = Object.keys(msg.message)[0];
             let text = '';
 
-            if (messageType === 'conversation') {
-                text = msg.message.conversation;
-            } else if (messageType === 'extendedTextMessage') {
-                text = msg.message.extendedTextMessage.text;
-            } else if (msg.message.imageMessage?.caption) {
-                text = msg.message.imageMessage.caption;
-            } else if (msg.message.videoMessage?.caption) {
-                text = msg.message.videoMessage.caption;
-            }
-
-            if (text) {
-                console.log(`Forwarding: ${text.substring(0, 30)}...`);
-                sendToTelegram(text);
+            try {
+                if (messageType === 'conversation') {
+                    text = msg.message.conversation;
+                    console.log(`Forwarding Text: ${text.substring(0, 30)}...`);
+                    await sendTextToTelegram(text);
+                    
+                } else if (messageType === 'extendedTextMessage') {
+                    text = msg.message.extendedTextMessage.text;
+                    console.log(`Forwarding Text: ${text.substring(0, 30)}...`);
+                    await sendTextToTelegram(text);
+                    
+                } else if (messageType === 'imageMessage') {
+                    text = msg.message.imageMessage.caption || '';
+                    console.log(`Downloading Image with caption: ${text.substring(0, 30)}...`);
+                    
+                    const buffer = await downloadMediaMessage(msg, 'buffer', {}, { 
+                        logger: pino({ level: 'silent' }),
+                        reuploadRequest: sock.updateMediaMessage
+                    });
+                    
+                    await sendMediaToTelegram(buffer, 'image', text);
+                    
+                } else if (messageType === 'videoMessage') {
+                    text = msg.message.videoMessage.caption || '';
+                    console.log(`Downloading Video with caption: ${text.substring(0, 30)}...`);
+                    
+                    const buffer = await downloadMediaMessage(msg, 'buffer', {}, { 
+                        logger: pino({ level: 'silent' }),
+                        reuploadRequest: sock.updateMediaMessage
+                    });
+                    
+                    await sendMediaToTelegram(buffer, 'video', text);
+                } else {
+                    console.log(`Message received, but unsupported media type: ${messageType}`);
+                }
+            } catch (err) {
+                console.error("❌ Failed to process message:", err.message);
             }
         }
     });
 }
 
-async function sendToTelegram(text) {
+async function sendTextToTelegram(text) {
     if (!TELEGRAM_BOT_TOKEN || !TELEGRAM_CHANNEL_ID) return;
     const url = `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`;
     try {
@@ -104,9 +129,37 @@ async function sendToTelegram(text) {
             chat_id: TELEGRAM_CHANNEL_ID,
             text: text
         });
-        console.log("✅ Sent to Telegram");
+        console.log("✅ Sent Text to Telegram");
     } catch (error) {
         console.error("❌ Telegram Error:", error.response?.data || error.message);
+    }
+}
+
+async function sendMediaToTelegram(buffer, type, caption) {
+    if (!TELEGRAM_BOT_TOKEN || !TELEGRAM_CHANNEL_ID) return;
+
+    const endpoint = type === 'image' ? 'sendPhoto' : 'sendVideo';
+    const url = `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/${endpoint}`;
+    
+    const formData = new FormData();
+    formData.append('chat_id', TELEGRAM_CHANNEL_ID);
+    
+    if (caption) {
+        formData.append('caption', caption);
+    }
+
+    const filename = type === 'image' ? 'image.jpg' : 'video.mp4';
+    const fileField = type === 'image' ? 'photo' : 'video';
+
+    formData.append(fileField, buffer, { filename: filename });
+
+    try {
+        await axios.post(url, formData, {
+            headers: formData.getHeaders() 
+        });
+        console.log(`✅ Sent ${type.toUpperCase()} to Telegram`);
+    } catch (error) {
+        console.error(`❌ Telegram Error (${type}):`, error.response?.data || error.message);
     }
 }
 
