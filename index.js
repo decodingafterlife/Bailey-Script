@@ -24,10 +24,15 @@ async function connectToWhatsApp() {
     const sock = makeWASocket({
         auth: state,
         logger: pino({ level: 'silent' }), 
-        // 1. Hardcoding a stable WA Web version to prevent 405/500 connection drops
         version: [2, 3000, 1033893291], 
-        // 2. Spoofing MacOS to bypass the Linux server block
         browser: ['Mac OS', 'Chrome', '121.0.6167.160'],
+        
+        keepAliveIntervalMs: 25000,
+        syncFullHistory: false,
+        markOnlineOnConnect: false,
+        getMessage: async (key) => {
+            return { conversation: 'Dummy message to prevent crash' };
+        }
     });
 
     sock.ev.on('creds.update', saveCreds);
