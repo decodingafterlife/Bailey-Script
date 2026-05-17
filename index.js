@@ -17,6 +17,10 @@ const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 const TELEGRAM_CHANNEL_ID = process.env.TELEGRAM_CHANNEL_ID;
 const WHATSAPP_CHANNEL_JID = process.env.WHATSAPP_CHANNEL_JID;
 
+
+const processedMessageIds = new Set();
+const MAX_CACHE_SIZE = 100;
+
 async function connectToWhatsApp() {
     console.log("🚀 Starting WhatsApp Bridge (ESM Mode)...");
     
@@ -72,6 +76,24 @@ async function connectToWhatsApp() {
         if (remoteJid === WHATSAPP_CHANNEL_JID) {
             if (msg.key.fromMe) return;
 
+            // --- THE MEMORY CHECK ---
+            const messageId = msg.key.id;
+            
+            // If we've already seen this ID, quietly stop processing
+            if (processedMessageIds.has(messageId)) {
+                return;
+            }
+
+            // Otherwise, add it to our memory bank
+            processedMessageIds.add(messageId);
+            
+            // Keep the cache size under 100 to save RAM
+            if (processedMessageIds.size > MAX_CACHE_SIZE) {
+                const oldestId = processedMessageIds.values().next().value;
+                processedMessageIds.delete(oldestId);
+            }
+            // -------------------------
+
             console.log('\n--- NEW CHANNEL MESSAGE DETECTED ---');
             
             const messageType = Object.keys(msg.message)[0];
@@ -120,11 +142,15 @@ async function connectToWhatsApp() {
                 }
             } catch (err) {
                 console.error("❌ Failed to process message:", err.message);
+                
+                // If it failed to send, remove it from the cache so it can try again later if Baileys re-emits it
+                processedMessageIds.delete(messageId); 
             }
         }
     });
 }
 
+// Function 1: Standard Text Sender
 async function sendTextToTelegram(text) {
     if (!TELEGRAM_BOT_TOKEN || !TELEGRAM_CHANNEL_ID) return;
     const url = `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`;
@@ -136,9 +162,11 @@ async function sendTextToTelegram(text) {
         console.log("✅ Sent Text to Telegram");
     } catch (error) {
         console.error("❌ Telegram Error:", error.response?.data || error.message);
+        throw error; // Throw so the main block knows it failed
     }
 }
 
+// Function 2: Media + Caption Sender
 async function sendMediaToTelegram(buffer, type, caption) {
     if (!TELEGRAM_BOT_TOKEN || !TELEGRAM_CHANNEL_ID) return;
 
@@ -164,6 +192,7 @@ async function sendMediaToTelegram(buffer, type, caption) {
         console.log(`✅ Sent ${type.toUpperCase()} to Telegram`);
     } catch (error) {
         console.error(`❌ Telegram Error (${type}):`, error.response?.data || error.message);
+        throw error; // Throw so the main block knows it failed
     }
 }
 
